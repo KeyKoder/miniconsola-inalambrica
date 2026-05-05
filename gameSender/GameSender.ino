@@ -1,5 +1,13 @@
+#define GY_521 // for controllers using the GY-521 sensor instead of the MPU-6050 sensor
+
 #include <WIFI.h>
 #include <WiFiUDP.h>
+
+#ifndef GY_521
+#define ACCEL_SENSOR_DEVICE_ID 0x70
+#else
+#define ACCEL_SENSOR_DEVICE_ID 0x68
+#endif
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -12,8 +20,11 @@
 
 // Pin defines
 #define BTN_PIN 4
-#define SDA_PIN 5
-#define SCL_PIN 6
+#define SDA_PIN 3
+// #define SDA_PIN 5
+#define SCL_PIN 2
+// #define SCL_PIN 6
+
 
 // OTA definitions
 #define WIFI_MAX_WAIT_MILLIS 10000 // 10 secs
@@ -105,7 +116,7 @@ void setup() {
     
     Wire.begin(SDA_PIN, SCL_PIN);
 
-    if (!mpu.begin()) {
+    if (!mpu.begin(ACCEL_SENSOR_DEVICE_ID)) {
       Serial.println("Failed to find MPU6050 chip");
       rgbLed.setPixelColor(0, rgbLed.Color(255,0,255));
       rgbLed.show();
