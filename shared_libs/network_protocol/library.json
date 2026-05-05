@@ -1,0 +1,6 @@
+{
+  "name": "network_protocol",
+  "version": "1.0.0",
+  "framework": "arduino",
+  "platforms": "espressif32"
+}
