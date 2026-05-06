@@ -1,13 +1,13 @@
-#define GY_521 // for controllers using the GY-521 sensor instead of the MPU-6050 sensor
+// #define GY_521 // for controllers using the GY-521 sensor instead of the MPU-6050 sensor
 
 #include <WIFI.h>
 #include <WiFiUDP.h>
 
-#ifndef GY_521
-#define ACCEL_SENSOR_DEVICE_ID 0x70
-#else
-#define ACCEL_SENSOR_DEVICE_ID 0x68
-#endif
+// #ifndef GY_521
+// #define ACCEL_SENSOR_DEVICE_ID 0x70
+// #else
+// #define ACCEL_SENSOR_DEVICE_ID 0x68
+// #endif
 
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -20,10 +20,10 @@
 
 // Pin defines
 #define BTN_PIN 4
-#define SDA_PIN 3
-// #define SDA_PIN 5
-#define SCL_PIN 2
-// #define SCL_PIN 6
+// #define SDA_PIN 3
+#define SDA_PIN 5
+// #define SCL_PIN 2
+#define SCL_PIN 6
 
 
 // OTA definitions
@@ -31,6 +31,8 @@
 
 #define RGB_LED_PIN 21 // ESP32-C3 built-in RGB led
 #define NUMPIXELS 1
+
+#define REASK_TIMER_DELAY 2000
 
 Adafruit_NeoPixel rgbLed (NUMPIXELS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -45,7 +47,7 @@ WiFiUDP Udp;
 unsigned int localPort = 1234;
 char packetBuffer[PACKET_MAXLEN];
 
-uint8_t playerId;
+uint8_t playerId = 255;
 
 Adafruit_MPU6050 mpu;
 
@@ -63,12 +65,15 @@ const char* uploadPage = R"rawliteral(
 )rawliteral";
 
 bool enabledOTAmode = false;
+bool retryConnection = false;
 
 sensors_event_t a, g, temp;
 float gyroBiasZ = 0;
+long reaskTimer;
 
 void setupOTA();
 void sendIntro();
+void WiFiEvent(WiFiEvent_t event);
 
 void setup() {
   Serial.begin(115200);
@@ -111,12 +116,15 @@ void setup() {
     Serial.println("Connected to the WiFi AP");
     Serial.print("IP address:\t");
     Serial.println(WiFi.localIP()); // Send IP to serial monitor
+
+    // WiFi.setAutoReconnect(true);
+    WiFi.onEvent(WiFiEvent);
     
     Udp.begin(localPort);
     
     Wire.begin(SDA_PIN, SCL_PIN);
 
-    if (!mpu.begin(ACCEL_SENSOR_DEVICE_ID)) {
+    if (!mpu.begin(0x68)) {
       Serial.println("Failed to find MPU6050 chip");
       rgbLed.setPixelColor(0, rgbLed.Color(255,0,255));
       rgbLed.show();
@@ -140,6 +148,8 @@ void setup() {
     gyroBiasZ /= 100.0f;
 
     sendIntro();
+
+    reaskTimer = millis();
 
     delay(2000); // delay before proceeding with input reading/sending
   } else {
@@ -168,16 +178,25 @@ void loop() {
     return;
   }
 
+  if(retryConnection) { // just wait
+    return;
+  }
+
   PacketResult r = receivePacket();
   switch(r.type) {
     case PACKET_ASSIGN_TYPE:
-      playerId = r.data.assign.playerId;
+      if(playerId == 255) {
+        playerId = r.data.assign.playerId;
+        rgbLed.setPixelColor(0, rgbLed.Color(r.data.assign.playerId == 0 ? 255 : 0,0,r.data.assign.playerId == 0 ? 0 : 255));
+        rgbLed.show();
+      }
       break;
-    case PACKET_RECONNECT_TYPE:
-      delay(random(100,500));
-      sendIntro();
-      delay(random(100,500));
-      return;
+  }
+
+  if(playerId == 255 && millis() - reaskTimer < REASK_TIMER_DELAY) {
+    reaskTimer = millis();
+    sendIntro();
+    return;
   }
 
   mpu.getEvent(&a, &g, &temp);
@@ -284,4 +303,27 @@ void setupOTA() {
   );
 
   server.begin();
+}
+
+void WiFiEvent(WiFiEvent_t event) {
+  Serial.printf("[WiFi-event] event: %d\n", event);
+  
+  switch(event) {
+    case SYSTEM_EVENT_STA_GOT_IP:
+      // rgbLed.setPixelColor(0, rgbLed.Color(0,255,255));
+      // rgbLed.show();
+      sendIntro();
+      retryConnection = false;
+      break;
+        
+    case SYSTEM_EVENT_STA_DISCONNECTED:
+      retryConnection = true;
+      rgbLed.setPixelColor(0, rgbLed.Color(255,255,0));
+      rgbLed.show();
+      Serial.println("WiFi lost connection! Even briefly.");
+      break;
+        
+    default:
+      break;
+  }
 }

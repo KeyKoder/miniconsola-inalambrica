@@ -7,7 +7,7 @@
 
 #define _clamp(val,minVal,maxVal) _max(minVal,_min(val,maxVal))
 
-// These definitions are taken from https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/Examples/Basics/1-HelloWorld/1-HelloWorld.ino
+// These display definitions are taken from https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/Examples/Basics/1-HelloWorld/1-HelloWorld.ino
 // Display definitions
 #define FONT 2
 #define FONT_SIZE_PX 16
@@ -68,6 +68,8 @@ int bounceCounter = 0;
 int maxBallXVel = 6;
 const float ballPaddleMaxBounceAngle = 80 * (PI/180); // convert to rad
 
+int connectedPlayers = 0;
+
 
 void setup() {
   Serial.begin(115200);
@@ -99,15 +101,7 @@ void setup() {
   // paddles[0] = (Paddle*)malloc(sizeof(Paddle));
   // paddles[1] = (Paddle*)malloc(sizeof(Paddle));
   ball = (Ball*)malloc(sizeof(Ball));
-
-  S2C_ReconnectPacket p;
-  p.type = PACKET_RECONNECT_TYPE;
-  sendPacketTo("255.255.255.255", &p, sizeof(S2C_ReconnectPacket));
 }
-
-bool player1Connected = false;
-
-float ax = 99, ay = 99, az = 99;
 
 void initGameState();
 void updateAI();
@@ -121,29 +115,39 @@ void loop() {
     
     PacketResult r = receivePacket();
     char s[50];
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
     sprintf(s, "Received Type %02x", r.type);
     if(r.type != PACKET_NONE) tft.drawString(s, TFT_WIDTH/2, TFT_WIDTH/2+FONT_SIZE_PX*3, FONT);
     switch(r.type) {
       case PACKET_INTRO_TYPE:
         S2C_AssignPacket p;
         p.type = PACKET_ASSIGN_TYPE;
-        p.playerId = player1Connected ? 1 : 0;
-        sendPacket(&p, sizeof(S2C_AssignPacket));
-        sprintf(s, "Player %d\nconnected!", p.playerId+1);
-        tft.drawString(s, TFT_HEIGHT/4*(player1Connected ? 3 : 1), TFT_WIDTH/2+FONT_SIZE_PX*4, FONT);
-        player1Connected = true;
+        p.playerId = connectedPlayers++;
+        sendPacketTo(Udp.remoteIP().toString().c_str(), &p, sizeof(S2C_AssignPacket));
+        sprintf(s, "Player %d", p.playerId+1);
+        tft.drawString(s, TFT_HEIGHT/4*(p.playerId == 0 ? 1 : 2), TFT_WIDTH/2+FONT_SIZE_PX*4, FONT);
+        tft.drawString("connected!", TFT_HEIGHT/4*(p.playerId == 0 ? 1 : 2), TFT_WIDTH/2+FONT_SIZE_PX*5, FONT);
         break;
       case PACKET_INPUT_TYPE:
+        if(r.data.input.playerId >= connectedPlayers) { // ignore, out of bounds player
+          break;
+        }
         sprintf(s, "Is P%d pressed? %s", r.data.input.playerId, r.data.input.buttonPressed ? "YES" : "NO");
         Serial.println(s);
         if(r.data.input.buttonPressed && !paddles[r.data.input.playerId].lastButtonState) {
           paddles[r.data.input.playerId].isReady = !paddles[r.data.input.playerId].isReady;
+          
+          sprintf(s, "Player %d", r.data.input.playerId+1);
+          tft.setTextColor(paddles[r.data.input.playerId].isReady ? TFT_CYAN : TFT_GREEN, TFT_BLACK);
+          tft.drawString(s, TFT_HEIGHT/4*(r.data.input.playerId == 0 ? 1 : 2), TFT_WIDTH/2+FONT_SIZE_PX*4, FONT);
+          tft.drawString("connected!", TFT_HEIGHT/4*(r.data.input.playerId == 0 ? 1 : 2), TFT_WIDTH/2+FONT_SIZE_PX*5, FONT);
         }
         paddles[r.data.input.playerId].lastButtonState = r.data.input.buttonPressed;
         break;
     }
 
-    if(paddles[0].isReady) {
+    if((connectedPlayers == 1 && paddles[0].isReady) ||
+       (connectedPlayers == 2 && paddles[0].isReady && paddles[1].isReady)) {
       gameStart = true;
       tft.fillScreen(TFT_BLACK);
 
@@ -157,6 +161,9 @@ void loop() {
   PacketResult r = receivePacket();
   switch(r.type) {
     case PACKET_INPUT_TYPE:
+      if(r.data.input.playerId >= connectedPlayers) { // ignore, out of bounds player
+        break;
+      }
       char s[50];
       
       float currentTilt = r.data.input.tilt / 100.0f;
@@ -193,7 +200,7 @@ void loop() {
     // paddles[0].oldY = paddles[0].y;
 
     // paddles[1].oldX = paddles[1].x;
-    paddles[1].oldY = paddles[1].y;
+    if(connectedPlayers == 1) paddles[1].oldY = paddles[1].y;
 
     ball->oldX = ball->x;
     ball->oldY = ball->y;
@@ -201,7 +208,7 @@ void loop() {
     // update positions
     paddles[0].y += paddles[0].vy;
 
-    updateAI();
+    if(connectedPlayers == 1) updateAI();
     paddles[1].y += paddles[1].vy;
 
     ball->x += ball->vx;

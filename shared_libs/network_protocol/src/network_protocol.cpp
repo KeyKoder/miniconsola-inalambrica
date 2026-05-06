@@ -30,7 +30,7 @@ PacketResult receivePacket() {
         int len = Udp.read(buffer, PACKET_MAXLEN);
 
         if (len > 0) {
-            // Use the actual received length, but capped at the size of our union/data
+            // use the actual received length, but capped at the size of the union
             size_t copyLen = (len < sizeof(result.data)) ? len : sizeof(result.data);
             memcpy(&result.data, buffer, copyLen);
             

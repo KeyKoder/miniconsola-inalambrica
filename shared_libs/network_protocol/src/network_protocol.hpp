@@ -5,6 +5,7 @@
 #include <stdint.h>  // Standard integer types
 #include <stddef.h>  // Standard size types
 #include <WiFiUdp.h> // For the Udp object recognition
+#include <IPAddress.h>
 
 #define PACKET_MAXLEN 255
 #define PACKET_NONE 0x00
@@ -12,6 +13,7 @@
 #define PACKET_ASSIGN_TYPE 0x0F
 #define PACKET_INTRO_TYPE 0x80
 #define PACKET_INPUT_TYPE 0x81
+#define PACKET_REASK_PLAYERID_TYPE 0x82
 
 // Force the compiler not to add empty padding bytes between variables.
 // This ensures the struct is exactly the same size on both ends of the connection.
@@ -21,6 +23,11 @@
 
 struct C2S_IntroPacket {
   char type; // PACKET_INTRO_TYPE
+};
+
+
+struct C2S_ReaskPlayerIdPacket {
+  char type; // PACKET_REASK_PLAYERID_TYPE
 };
 
 
@@ -57,6 +64,7 @@ struct PacketResult {
         C2S_InputPacket input;
         S2C_AssignPacket assign;
         S2C_ReconnectPacket reconnect;
+        C2S_ReaskPlayerIdPacket reaskId;
     } data;
 };
 
